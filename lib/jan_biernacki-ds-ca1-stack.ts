@@ -233,6 +233,9 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       "confirm-signup.ts"
     );
 
+    this.addAuthRoute('signout', 'GET', 'SignoutFn', 'signout.ts');
+    this.addAuthRoute('signin', 'POST', 'SigninFn', 'signin.ts');
+
     
     
   }
