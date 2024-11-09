@@ -229,27 +229,6 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
 
 
-    const getMovieByIdURL = getMovieByIdFn.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedOrigins: ["*"],
-      },
-    });
-
-    const getAllMoviesURL = getAllMoviesFn.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedOrigins: ["*"],
-      },
-    });
-
-    const getMovieCastMembersURL = getMovieCastMembersFn.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedOrigins: ["*"],
-      },
-    });  
-
     // Permissions
     moviesTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieByIdFn);
@@ -304,11 +283,6 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
     );
     
-
-
-    new cdk.CfnOutput(this, "CA1 Function Url", { value: ca1FnURL.url });
-    new cdk.CfnOutput(this, "Get Movie Function Url", { value: getMovieByIdURL.url });
-    new cdk.CfnOutput(this, "Get All Movies Function Url", { value: getAllMoviesURL.url });
-    new cdk.CfnOutput(this, "Get Movie Cast Url", { value: getMovieCastMembersURL.url, });
+    
   }
 }
