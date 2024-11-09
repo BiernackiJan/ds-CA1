@@ -12,6 +12,9 @@ import { UserPool } from "aws-cdk-lib/aws-cognito";
 
 import { Construct } from 'constructs';
 
+import { AuthApi } from './auth-api'
+import {AppApi } from './app-api'
+
 export class JanBiernackiDsCa1Stack extends cdk.Stack {
   private auth: apig.IResource;
   private userPoolId: string;
@@ -204,128 +207,28 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
     //authenticatioon
     const userPool = new UserPool(this, "UserPool", {
-  
-    signInAliases: { username: true, email: true },
-    selfSignUpEnabled: true,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
+      signInAliases: { username: true, email: true },
+      selfSignUpEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    this.userPoolId = userPool.userPoolId;
+    const userPoolId = userPool.userPoolId;
 
     const appClient = userPool.addClient("AppClient", {
       authFlows: { userPassword: true },
     });
 
-    this.userPoolClientId = appClient.userPoolClientId;
-    this.auth = api.root.addResource("auth");
+    const userPoolClientId = appClient.userPoolClientId;
 
-    this.addAuthRoute(
-      "signup",
-      "POST",
-      "SignupFn",
-      'signup.ts'
-    );
-
-    this.addAuthRoute(
-      "confirm_signup",
-      "POST",
-      "ConfirmFn",
-      "confirm-signup.ts"
-    );
-
-    this.addAuthRoute('signout', 'GET', 'SignoutFn', 'signout.ts');
-    this.addAuthRoute('signin', 'POST', 'SigninFn', 'signin.ts');
-
-
-    const appApi = new apig.RestApi(this, "AppApi", {
-      description: "App RestApi",
-      endpointTypes: [apig.EndpointType.REGIONAL],
-      defaultCorsPreflightOptions: {
-        allowOrigins: apig.Cors.ALL_ORIGINS,
-      },
+    new AuthApi(this, 'AuthServiceApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
     });
 
-    const appCommonFnProps = {
-      architecture: lambda.Architecture.ARM_64,
-      timeout: cdk.Duration.seconds(10),
-      memorySize: 128,
-      runtime: lambda.Runtime.NODEJS_18_X,
-      handler: "handler",
-      environment: {
-        USER_POOL_ID: this.userPoolId,
-        CLIENT_ID: this.userPoolClientId,
-        REGION: cdk.Aws.REGION,
-      },
-    };
-
-
-    const protectedRes = appApi.root.addResource("protected");
-
-    const publicRes = appApi.root.addResource("public");
-
-    const protectedFn = new node.NodejsFunction(this, "ProtectedFn", {
-      ...appCommonFnProps,
-      entry: "./lambdas/protected.ts",
-    });
-
-    const publicFn = new node.NodejsFunction(this, "PublicFn", {
-      ...appCommonFnProps,
-      entry: "./lambdas/public.ts",
-    });
-
-    const authorizerFn = new node.NodejsFunction(this, "AuthorizerFn", {
-      ...appCommonFnProps,
-      entry: "./lambdas/auth/authorizer.ts",
-    });
-
-    const requestAuthorizer = new apig.RequestAuthorizer(
-      this,
-      "RequestAuthorizer",
-      {
-        identitySources: [apig.IdentitySource.header("cookie")],
-        handler: authorizerFn,
-        resultsCacheTtl: cdk.Duration.minutes(0),
-      }
-    );
-
-    protectedRes.addMethod("GET", new apig.LambdaIntegration(protectedFn), {
-      authorizer: requestAuthorizer,
-      authorizationType: apig.AuthorizationType.CUSTOM,
-    });
-
-    publicRes.addMethod("GET", new apig.LambdaIntegration(publicFn));
+    new AppApi(this, 'AppApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
+    } );
     
-  }
-
-  
-
-private addAuthRoute(
-  resourceName: string,
-  method: string,
-  fnName: string,
-  fnEntry: string,
-  allowCognitoAccess?: boolean
-): void {
-  const commonFnProps = {
-    architecture: lambda.Architecture.ARM_64,
-    timeout: cdk.Duration.seconds(10),
-    memorySize: 128,
-    runtime: lambda.Runtime.NODEJS_18_X,
-    handler: "handler",
-    environment: {
-    USER_POOL_ID: this.userPoolId,
-      CLIENT_ID: this.userPoolClientId,
-      REGION: cdk.Aws.REGION
-    },
-  };
-    
-  const resource = this.auth.addResource(resourceName);
-    
-  const fn = new node.NodejsFunction(this, fnName, {
-    ...commonFnProps,
-    entry: `${__dirname}/../lambdas/auth/${fnEntry}`,
-  });
-
-  resource.addMethod(method, new apig.LambdaIntegration(fn));
   }
 }
