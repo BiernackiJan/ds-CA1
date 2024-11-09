@@ -1,51 +1,51 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
+import { MovieCastMemberQueryParams } from "../shared/types";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   QueryCommand,
-  GetCommand,
   QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
+import Ajv from "ajv";
+import schema from "../shared/types.schema.json";
 
+const ajv = new Ajv();
+const isValidQueryParams = ajv.compile(
+  schema.definitions["MovieCastMemberQueryParams"] || {}
+);
+ 
 const ddbDocClient = createDocumentClient();
 
 export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
-    console.log("Event: ", JSON.stringify(event));
-
+    console.log("[EVENT]", JSON.stringify(event));
     const queryParams = event.queryStringParameters;
     if (!queryParams) {
       return {
         statusCode: 500,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+        },
         body: JSON.stringify({ message: "Missing query parameters" }),
       };
     }
-
-    if (!queryParams.movieId) {
-        return {
-          statusCode: 400,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "Missing movieId parameter" }),
-        };
-      }
-      const movieId = parseInt(queryParams.movieId);
-      
-    if (!movieId) {
+    if (!isValidQueryParams(queryParams)) {
       return {
-        statusCode: 400,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Missing or invalid movieId parameter" }),
+        statusCode: 500,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `Incorrect type. Must match Query parameters schema`,
+          schema: schema.definitions["MovieCastMemberQueryParams"],
+        }),
       };
     }
-
-    // Set up the query to retrieve cast members
+    
+    const movieId = queryParams.movieId ? parseInt(queryParams.movieId) : 0;
     let commandInput: QueryCommandInput = {
-      TableName: process.env.CAST_TABLE_NAME,
-      KeyConditionExpression: "movieId = :m",
-      ExpressionAttributeValues: { ":m": movieId },
+      TableName: process.env.TABLE_NAME,
     };
-
     if ("roleName" in queryParams) {
       commandInput = {
         ...commandInput,
@@ -65,56 +65,51 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
           ":a": queryParams.actorName,
         },
       };
+    } else {
+      commandInput = {
+        ...commandInput,
+        KeyConditionExpression: "movieId = :m",
+        ExpressionAttributeValues: {
+          ":m": movieId,
+        },
+      };
     }
-
-    const castOutput = await ddbDocClient.send(new QueryCommand(commandInput));
-    const responseBody: any = { cast: castOutput.Items };
-
-    // If `facts=true`, fetch movie metadata and add to the response
-    if (queryParams.facts === "true") {
-      const movieDetailsOutput = await ddbDocClient.send(
-        new GetCommand({
-          TableName: process.env.MOVIES_TABLE_NAME,
-          Key: { id: movieId },
-          ProjectionExpression: "title, genreIds, overview",
-        })
+    
+    const commandOutput = await ddbDocClient.send(
+      new QueryCommand(commandInput)
       );
-
-      if (movieDetailsOutput.Item) {
-        responseBody.movieDetails = {
-          title: movieDetailsOutput.Item.title,
-          genreIds: movieDetailsOutput.Item.genreIds,
-          overview: movieDetailsOutput.Item.overview,
-        };
-      } else {
-        console.log(`Movie metadata not found for movieId: ${movieId}`);
-      }
+      
+      return {
+        statusCode: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          data: commandOutput.Items,
+        }),
+      };
+    } catch (error: any) {
+      console.log(JSON.stringify(error));
+      return {
+        statusCode: 500,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ error }),
+      };
     }
-
-    // Return the combined response with cast and optionally movie details
-    return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(responseBody),
-    };
-  } catch (error: any) {
-    console.log(JSON.stringify(error));
-    return {
-      statusCode: 500,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error }),
-    };
-  }
-};
-
-function createDocumentClient() {
-  const ddbClient = new DynamoDBClient({ region: process.env.REGION });
-  const marshallOptions = {
-    convertEmptyValues: true,
-    removeUndefinedValues: true,
-    convertClassInstanceToMap: true,
   };
-  const unmarshallOptions = { wrapNumbers: false };
+  
+  function createDocumentClient() {
+    const ddbClient = new DynamoDBClient({ region: process.env.REGION });
+    const marshallOptions = {
+      convertEmptyValues: true,
+      removeUndefinedValues: true,
+      convertClassInstanceToMap: true,
+    };
+    const unmarshallOptions = {
+    wrapNumbers: false,
+  };
   const translateConfig = { marshallOptions, unmarshallOptions };
   return DynamoDBDocumentClient.from(ddbClient, translateConfig);
 }

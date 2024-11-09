@@ -6,8 +6,6 @@ import * as custom from "aws-cdk-lib/custom-resources";
 import * as apig from "aws-cdk-lib/aws-apigateway";
 import * as node from "aws-cdk-lib/aws-lambda-nodejs";
 
-
-
 import { generateBatch } from "../shared/utils";
 import { movies, movieCasts } from "../seed/movies";
 import { UserPool } from "aws-cdk-lib/aws-cognito";
@@ -112,6 +110,8 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       },
     });
 
+
+    //Tables
     const moviesTable = new dynamodb.Table(this, "MoviesTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
@@ -132,6 +132,9 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       sortKey: { name: "roleName", type: dynamodb.AttributeType.STRING },
     });
 
+
+
+
     new custom.AwsCustomResource(this, "moviesddbInitData", {
       onCreate: {
         service: "DynamoDB",
@@ -148,6 +151,8 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
         resources: [moviesTable.tableArn, movieCastsTable.tableArn],  // Includes movie cast
       }),
     });
+
+
 
     //Lambdas
     const getMovieByIdFn = new lambdanode.NodejsFunction(
@@ -192,8 +197,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
         timeout: cdk.Duration.seconds(10),
         memorySize: 128,
         environment: {
-          CAST_TABLE_NAME: movieCastsTable.tableName,
-          MOVIES_TABLE_NAME: moviesTable.tableName,
+          TABLE_NAME: movieCastsTable.tableName,
           REGION: "eu-west-1",
         },
       }
@@ -271,8 +275,6 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
     
     const moviesEndpoint = api.root.addResource("movies");
-
-
     moviesEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
@@ -282,6 +284,12 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     movieEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
+    );
+
+    const movieCastEndpoint = moviesEndpoint.addResource("cast");
+    movieCastEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieCastMembersFn, { proxy: true })
     );
 
     moviesEndpoint.addMethod(
