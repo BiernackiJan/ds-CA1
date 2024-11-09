@@ -4,12 +4,14 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 // Initialization
 const ddbDocClient = createDDbDocClient();
+
 // Handler
 export const handler: Handler = async (event, context) => {
   try {
     console.log("Event: ", JSON.stringify(event));
     const parameters = event?.queryStringParameters;
     const movieId = parameters ? parseInt(parameters.movieId) : undefined;
+    const includeFacts = parameters.facts === "true";
 
     if (!movieId) {
       return {
@@ -20,6 +22,7 @@ export const handler: Handler = async (event, context) => {
         body: JSON.stringify({ Message: "Missing movie Id" }),
       };
     }
+    
     const commandOutput = await ddbDocClient.send(
       new GetCommand({
         TableName: process.env.TABLE_NAME,

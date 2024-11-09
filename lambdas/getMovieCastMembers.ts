@@ -1,35 +1,51 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, QueryCommand, QueryCommandInput, } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  QueryCommand,
+  GetCommand,
+  QueryCommandInput,
+} from "@aws-sdk/lib-dynamodb";
 
 const ddbDocClient = createDocumentClient();
 
 export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
     console.log("Event: ", JSON.stringify(event));
+
     const queryParams = event.queryStringParameters;
     if (!queryParams) {
       return {
         statusCode: 500,
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "Missing query parameters" }),
       };
     }
+
     if (!queryParams.movieId) {
+        return {
+          statusCode: 400,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: "Missing movieId parameter" }),
+        };
+      }
+      const movieId = parseInt(queryParams.movieId);
+      
+    if (!movieId) {
       return {
-        statusCode: 500,
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ message: "Missing movie Id parameter" }),
+        statusCode: 400,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Missing or invalid movieId parameter" }),
       };
     }
-    const movieId = parseInt(queryParams?.movieId);
+
+    // Set up the query to retrieve cast members
     let commandInput: QueryCommandInput = {
       TableName: process.env.CAST_TABLE_NAME,
+      KeyConditionExpression: "movieId = :m",
+      ExpressionAttributeValues: { ":m": movieId },
     };
+
     if ("roleName" in queryParams) {
       commandInput = {
         ...commandInput,
@@ -49,39 +65,46 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
           ":a": queryParams.actorName,
         },
       };
-    } else {
-      commandInput = {
-        ...commandInput,
-        KeyConditionExpression: "movieId = :m",
-        ExpressionAttributeValues: {
-          ":m": movieId,
-        },
-      };
     }
 
-    const commandOutput = await ddbDocClient.send(
-      new QueryCommand(commandInput)
-    );
+    const castOutput = await ddbDocClient.send(new QueryCommand(commandInput));
+    const responseBody: any = { cast: castOutput.Items };
 
+    // If `facts=true`, fetch movie metadata and add to the response
+    if (queryParams.facts === "true") {
+      const movieDetailsOutput = await ddbDocClient.send(
+        new GetCommand({
+          TableName: process.env.MOVIES_TABLE_NAME,
+          Key: { id: movieId },
+          ProjectionExpression: "title, genreIds, overview",
+        })
+      );
+
+      if (movieDetailsOutput.Item) {
+        responseBody.movieDetails = {
+          title: movieDetailsOutput.Item.title,
+          genreIds: movieDetailsOutput.Item.genreIds,
+          overview: movieDetailsOutput.Item.overview,
+        };
+      } else {
+        console.log(`Movie metadata not found for movieId: ${movieId}`);
+      }
+    }
+
+    // Return the combined response with cast and optionally movie details
     return {
       statusCode: 200,
-      headers: {
-        "content-type": "application/json",
-     },
-      body: JSON.stringify({
-        data: commandOutput.Items,
-        }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(responseBody),
     };
-    } catch (error: any) {
+  } catch (error: any) {
     console.log(JSON.stringify(error));
     return {
       statusCode: 500,
-      headers: {
-        "content-type": "application/json",
-        },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ error }),
     };
-     }
+  }
 };
 
 function createDocumentClient() {
@@ -91,9 +114,7 @@ function createDocumentClient() {
     removeUndefinedValues: true,
     convertClassInstanceToMap: true,
   };
-  const unmarshallOptions = {
-    wrapNumbers: false,
-  };
+  const unmarshallOptions = { wrapNumbers: false };
   const translateConfig = { marshallOptions, unmarshallOptions };
   return DynamoDBDocumentClient.from(ddbClient, translateConfig);
 }

@@ -108,6 +108,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
         memorySize: 128,
         environment: {
           CAST_TABLE_NAME: movieCastsTable.tableName,
+          MOVIES_TABLE_NAME: moviesTable.tableName,
           REGION: "eu-west-1",
         },
       }
@@ -137,9 +138,11 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       },
     });  
 
+    moviesTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieByIdFn);
     moviesTable.grantReadData(getAllMoviesFn);
     movieCastsTable.grantReadData(getMovieCastMembersFn);
+    movieCastsTable.grantReadData(getMovieByIdFn)
 
 
     new cdk.CfnOutput(this, "CA1 Function Url", { value: ca1FnURL.url });
