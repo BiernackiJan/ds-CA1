@@ -166,6 +166,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
         memorySize: 128,
         environment: {
           TABLE_NAME: moviesTable.tableName,
+          CAST_TABLE_NAME: movieCastsTable.tableName,
           REGION: 'eu-west-1',
         },
       }
@@ -285,6 +286,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
     );
+
 
     const movieCastEndpoint = moviesEndpoint.addResource("cast");
     movieCastEndpoint.addMethod(
