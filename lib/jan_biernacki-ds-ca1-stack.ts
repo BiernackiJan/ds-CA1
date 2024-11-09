@@ -16,5 +16,14 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       memorySize: 128,
     });
 
+    const ca1FnURL = ca1Fn.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.AWS_IAM,
+      cors: {
+        allowedOrigins: ["*"],
+      },
+    });
+
+    new cdk.CfnOutput(this, "CA1 Function Url", { value: ca1FnURL.url });
+
   }
 }
