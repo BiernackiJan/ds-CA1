@@ -3,15 +3,99 @@ import * as lambdanode from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
+import * as apig from "aws-cdk-lib/aws-apigateway";
+import * as node from "aws-cdk-lib/aws-lambda-nodejs";
+
+
 
 import { generateBatch } from "../shared/utils";
 import { movies, movieCasts } from "../seed/movies";
+import { UserPool } from "aws-cdk-lib/aws-cognito";
 
 import { Construct } from 'constructs';
 
 export class JanBiernackiDsCa1Stack extends cdk.Stack {
+  private auth: apig.IResource;
+  private userPoolId: string;
+  private userPoolClientId: string;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+
+  //   //authenticatioon
+  //   const userPool = new UserPool(this, "UserPool", {
+  //     signInAliases: { username: true, email: true },
+  //     selfSignUpEnabled: true,
+  //     removalPolicy: cdk.RemovalPolicy.DESTROY,
+  //   });
+
+  //   this.userPoolId = userPool.userPoolId;
+
+  //   const appClient = userPool.addClient("AppClient", {
+  //     authFlows: { userPassword: true },
+  //   });
+
+  //   this.userPoolClientId = appClient.userPoolClientId;
+
+  //   const authApi = new apig.RestApi(this, "AuthServiceApi", {
+  //     description: "Authentication Service RestApi",
+  //     endpointTypes: [apig.EndpointType.REGIONAL],
+  //     defaultCorsPreflightOptions: {
+  //       allowOrigins: apig.Cors.ALL_ORIGINS,
+  //     },
+  //   });
+
+
+  //   this.auth = authApi.root.addResource("auth");
+
+
+  //   this.addAuthRoute(
+  //     "signup",
+  //     "POST",
+  //     "SignupFn",
+  //     'signup.ts'
+  //   );
+
+  //   this.addAuthRoute(
+  //     "confirm_signup",
+  //     "POST",
+  //     "ConfirmFn",
+  //     "confirm-signup.ts"
+  //   );
+
+  // }
+
+  
+
+  // private addAuthRoute(
+  //   resourceName: string,
+  //   method: string,
+  //   fnName: string,
+  //   fnEntry: string,
+  //   allowCognitoAccess?: boolean
+  // ): void {
+  //   const commonFnProps = {
+  //     architecture: lambda.Architecture.ARM_64,
+  //     timeout: cdk.Duration.seconds(10),
+  //     memorySize: 128,
+  //     runtime: lambda.Runtime.NODEJS_18_X,
+  //     handler: "handler",
+  //     environment: {
+  //       USER_POOL_ID: this.userPoolId,
+  //       CLIENT_ID: this.userPoolClientId,
+  //       REGION: cdk.Aws.REGION
+  //     },
+  //   };
+    
+  //   const resource = this.auth.addResource(resourceName);
+    
+  //   const fn = new node.NodejsFunction(this, fnName, {
+  //     ...commonFnProps,
+  //     entry: `${__dirname}/../lambdas/auth/${fnEntry}`,
+  //   });
+
+  //   resource.addMethod(method, new apig.LambdaIntegration(fn));
 
     const ca1Fn = new lambdanode.NodejsFunction(this, "Ca1Fn", {
       architecture: lambda.Architecture.ARM_64,
@@ -138,11 +222,40 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       },
     });  
 
+    // Permissions
     moviesTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieByIdFn);
     moviesTable.grantReadData(getAllMoviesFn);
     movieCastsTable.grantReadData(getMovieCastMembersFn);
     movieCastsTable.grantReadData(getMovieByIdFn)
+
+
+    // REST API 
+    const api = new apig.RestApi(this, "RestAPI", {
+      description: "demo api",
+      deployOptions: {
+        stageName: "dev",
+      },
+      defaultCorsPreflightOptions: {
+        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
+        allowCredentials: true,
+        allowOrigins: ["*"],
+      },
+    });
+    
+    const moviesEndpoint = api.root.addResource("movies");
+    moviesEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
+    );
+    
+    const movieEndpoint = moviesEndpoint.addResource("{movieId}");
+    movieEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
+    );
+    
 
 
     new cdk.CfnOutput(this, "CA1 Function Url", { value: ca1FnURL.url });
