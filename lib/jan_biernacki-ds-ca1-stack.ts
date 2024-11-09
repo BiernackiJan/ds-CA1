@@ -149,6 +149,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       }),
     });
 
+    //Lambdas
     const getMovieByIdFn = new lambdanode.NodejsFunction(
       this,
       "GetMovieByIdFn",
@@ -198,7 +199,29 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       }
     );
 
-      
+    const newMovieFn = new lambdanode.NodejsFunction(this, "AddMovieFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_16_X,
+      entry: `${__dirname}/../lambdas/addMovie.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: moviesTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
+    const deleteMovieFn = new lambdanode.NodejsFunction(this, "DeleteMovieFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_16_X,
+      entry: `${__dirname}/../lambdas/deleteMovie.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        MOVIES_TABLE_NAME: moviesTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
 
 
     const getMovieByIdURL = getMovieByIdFn.addFunctionUrl({
@@ -226,6 +249,9 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     moviesTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieByIdFn);
     moviesTable.grantReadData(getAllMoviesFn);
+    moviesTable.grantReadWriteData(deleteMovieFn);
+    moviesTable.grantReadWriteData(newMovieFn)
+
     movieCastsTable.grantReadData(getMovieCastMembersFn);
     movieCastsTable.grantReadData(getMovieByIdFn)
 
@@ -245,6 +271,8 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
     
     const moviesEndpoint = api.root.addResource("movies");
+
+
     moviesEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
@@ -254,6 +282,16 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     movieEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
+    );
+
+    moviesEndpoint.addMethod(
+      "POST",
+      new apig.LambdaIntegration(newMovieFn, { proxy: true })
+    );
+
+    moviesEndpoint.addMethod(
+      "DELETE",
+      new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
     );
     
 
