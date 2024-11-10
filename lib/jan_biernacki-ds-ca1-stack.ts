@@ -153,6 +153,18 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       },
     });
 
+    const updateMovieFn = new lambdanode.NodejsFunction(this, "UpdateMovieFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateMovie.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: moviesTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+    
 
     //IAM Roles
     //adding permissions to allow for translation
@@ -174,6 +186,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     moviesTable.grantReadData(getAllMoviesFn);
     moviesTable.grantReadWriteData(deleteMovieFn);
     moviesTable.grantReadWriteData(newMovieFn)
+    moviesTable.grantReadWriteData(updateMovieFn);
     
     movieCastsTable.grantReadData(getMovieCastMembersFn);
     movieCastsTable.grantReadData(getMovieByIdFn)
@@ -182,7 +195,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
     // REST API 
     const api = new apig.RestApi(this, "RestAPI", {
-      description: "demo api",
+      description: "ca1 api",
       deployOptions: {
         stageName: "dev",
       },
@@ -227,6 +240,11 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     moviesEndpoint.addMethod(
       "DELETE",
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
+    );
+
+    movieEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateMovieFn, { proxy: true })
     );
 
 
