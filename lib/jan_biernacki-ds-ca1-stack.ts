@@ -154,11 +154,18 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
 
 
+    //IAM Roles
     //adding permissions to allow for translation
     getMovieByIdFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ["translate:TranslateText"],
       resources: ["*"], // You can restrict this to specific resources if needed
     }));
+
+    newMovieFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:PutItem'],
+      resources: [movieTranslationsTable.tableArn],  // Grant PutItem permissions on the MovieTranslations table
+    }));
+    
     
 
     // Permissions

@@ -1,6 +1,6 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { TranslateClient, TranslateTextCommand } from "@aws-sdk/client-translate";
 import Ajv from "ajv";
 import schema from "../shared/types.schema.json";
@@ -14,13 +14,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   try {
     console.log("Event received:", JSON.stringify(event));
     const queryParams = event.queryStringParameters || {};
+    const body = event.body ? JSON.parse(event.body) : undefined;
 
     // Validate query parameters
     if (!isValidQueryParams(queryParams)) {
       return {
         statusCode: 400,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Invalid query parameters" }),
+        body: JSON.stringify({ message: "Invalid query parameters", errors: isValidQueryParams.errors }),
       };
     }
 
@@ -51,12 +52,34 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       };
     }
 
-    let responseBody = { data: movieData.Item };
+    let responseBody = { data: movieData.Item, queryParams: {} };
+    responseBody.queryParams = queryParams;
+
 
     // If language query parameter is provided, perform translation
     if (queryParams.language) {
       const language = queryParams.language;
+
       console.log(`Requested translation for language: ${language}`);
+
+
+       // Check if translation exists in cache table
+       const cachedTranslation = await ddbDocClient.send(
+        new GetCommand({
+          TableName: process.env.TRANSLATION_TABLE_NAME,
+          Key: { PK: `MOVIE#${movieId}`, language },
+        })
+      );
+
+      if (cachedTranslation.Item) {
+        console.log("Translation found in cache.");
+        responseBody.data.title = cachedTranslation.Item.title;
+        responseBody.data.overview = cachedTranslation.Item.overview;
+
+
+      } else {
+        console.log("No cached translation found; proceeding with translation.");
+
 
       // Translate original title
       const titleTranslation = await translateClient.send(
@@ -79,7 +102,25 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // Add the translated title and overview to the response
       responseBody.data.title = titleTranslation.TranslatedText;
       responseBody.data.overview = overviewTranslation.TranslatedText;
+
+
+      const translatedData = {
+        PK: `MOVIE#${movieId}`,
+        language, 
+        title: titleTranslation.TranslatedText,  // Hardcoded for testing
+        overview: overviewTranslation.TranslatedText, // Hardcoded for testing
+        body
+      };
+
+      await ddbDocClient.send(
+        new PutCommand({
+          TableName: process.env.TRANSLATION_TABLE_NAME,
+          Item: translatedData,
+        })
+      );
+      console.log("Cached the translated text in DynamoDB.");
     }
+  }
 
     return {
       statusCode: 200,
@@ -91,15 +132,24 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: "Internal Server Error" }),
+      body: JSON.stringify({
+        error: "Internal Server Error",
+        details: error.message || JSON.stringify(error),
+      }),
     };
   }
 };
 
 function createDDbDocClient() {
   const ddbClient = new DynamoDBClient({ region: process.env.REGION });
-  return DynamoDBDocumentClient.from(ddbClient, {
-    marshallOptions: { convertEmptyValues: true, removeUndefinedValues: true },
-    unmarshallOptions: { wrapNumbers: false },
-  });
+  const marshallOptions = {
+    convertEmptyValues: true,
+    removeUndefinedValues: true,
+    convertClassInstanceToMap: true,
+  };
+  const unmarshallOptions = {
+    wrapNumbers: false,
+  };
+  const translateConfig = { marshallOptions, unmarshallOptions };
+  return DynamoDBDocumentClient.from(ddbClient, translateConfig);
 }
