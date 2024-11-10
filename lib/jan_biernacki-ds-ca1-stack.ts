@@ -13,12 +13,12 @@ import { UserPool } from "aws-cdk-lib/aws-cognito";
 import { Construct } from 'constructs';
 
 import { AuthApi } from './auth-api'
-import {AppApi } from './app-api'
+import { AppApi } from './app-api'
+
+import * as iam from 'aws-cdk-lib/aws-iam';
+
 
 export class JanBiernackiDsCa1Stack extends cdk.Stack {
-  private auth: apig.IResource;
-  private userPoolId: string;
-  private userPoolClientId: string;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -53,6 +53,13 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       sortKey: { name: "roleName", type: dynamodb.AttributeType.STRING },
     });
 
+    const movieTranslationsTable = new dynamodb.Table(this, "MovieTranslationsTable", {
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING }, // e.g., "MOVIE#<movieId>"
+      sortKey: { name: "language", type: dynamodb.AttributeType.STRING }, // e.g., "fr" for French
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      tableName: "MovieTranslations",
+    });
 
 
 
@@ -76,22 +83,19 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
 
     //Lambdas
-    const getMovieByIdFn = new lambdanode.NodejsFunction(
-      this,
-      "GetMovieByIdFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/getMovieById.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: moviesTable.tableName,
-          CAST_TABLE_NAME: movieCastsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
+    const getMovieByIdFn = new lambdanode.NodejsFunction(this, "GetMovieByIdFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/getMovieById.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: moviesTable.tableName,
+        CAST_TABLE_NAME: movieCastsTable.tableName,
+        TRANSLATION_TABLE_NAME: movieTranslationsTable.tableName,
+        REGION: 'eu-west-1',
+      },
+    });
 
     const getAllMoviesFn = new lambdanode.NodejsFunction(
       this,
@@ -150,16 +154,24 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
 
 
+    //adding permissions to allow for translation
+    getMovieByIdFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["translate:TranslateText"],
+      resources: ["*"], // You can restrict this to specific resources if needed
+    }));
+    
+
     // Permissions
     moviesTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieByIdFn);
     moviesTable.grantReadData(getAllMoviesFn);
     moviesTable.grantReadWriteData(deleteMovieFn);
     moviesTable.grantReadWriteData(newMovieFn)
-
+    
     movieCastsTable.grantReadData(getMovieCastMembersFn);
     movieCastsTable.grantReadData(getMovieByIdFn)
 
+    movieTranslationsTable.grantReadWriteData(getMovieByIdFn);
 
     // REST API 
     const api = new apig.RestApi(this, "RestAPI", {
@@ -192,6 +204,12 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     movieCastEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieCastMembersFn, { proxy: true })
+    );
+
+    const translationEndpoint = movieEndpoint.addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
     );
 
     moviesEndpoint.addMethod(
