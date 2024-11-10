@@ -38,10 +38,24 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       };
     }
 
-    const commandOutput = await ddbDocClient.send(
+
+    // Extract user ID from Cognito identity
+    const userId = (event.requestContext as any).authorizer?.claims?.sub;
+    if (!userId) {
+      return {
+        statusCode: 403,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Unauthorized" }),
+      };
+    }
+
+      // Add userId to the item data
+    const movieItem = { ...body, userId };
+
+    await ddbDocClient.send(
       new PutCommand({
         TableName: process.env.TABLE_NAME,
-        Item: body,
+        Item: movieItem,
       })
     );
     return {

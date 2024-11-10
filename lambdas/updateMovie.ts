@@ -1,6 +1,6 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 import Ajv from "ajv";
 import schema from "../shared/types.schema.json";
@@ -17,8 +17,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
     
     const movieId = event.pathParameters?.movieId;
     const body = event.body ? JSON.parse(event.body) : undefined;
+    const userId = (event.requestContext as any).authorizer?.claims?.sub;
     
-    if (!movieId || !body) {
+    if (!movieId || !body || !userId) {
       return {
         statusCode: 400,
         headers: {
@@ -27,6 +28,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         body: JSON.stringify({ message: "Missing movie ID or request body" }),
       };
     }
+
+    const movieData = await ddbDocClient.send(
+        new GetCommand({
+          TableName: process.env.TABLE_NAME,
+          Key: { id: parseInt(movieId, 10) },
+        })
+    );
+
 
     if (!isValidBodyParams(body)) {
       return {
@@ -41,6 +50,15 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       };
     }
 
+
+    if (!movieData.Item || movieData.Item.userId !== userId) {
+        return {
+          statusCode: 403,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: "Forbidden: You are not the owner of this movie" }),
+        };
+    }
+  
     // Convert movieId to number
     const movieIdNumber = parseInt(movieId, 10);
     if (isNaN(movieIdNumber)) {
@@ -54,20 +72,16 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
     }
 
     const commandOutput = await ddbDocClient.send(
-      new UpdateCommand({
-        TableName: process.env.TABLE_NAME,
-        Key: { id: parseInt(movieId, 10) },
-        UpdateExpression: "SET #title = :title, #overview = :overview",
-        ExpressionAttributeNames: {
-          "#title": "title",
-          "#overview": "overview",
-        },
-        ExpressionAttributeValues: {
-          ":title": body.title,
-          ":overview": body.overview,
-        },
-        ReturnValues: "ALL_NEW",
-      })
+        new UpdateCommand({
+          TableName: process.env.TABLE_NAME,
+          Key: { id: parseInt(movieId, 10) },
+          UpdateExpression: "SET #title = :title, #overview = :overview",
+          ExpressionAttributeNames: { "#title": "title", "#overview": "overview" },
+          ExpressionAttributeValues: {
+            ":title": body.title,
+            ":overview": body.overview,
+          },
+        })
     );
 
     return {
