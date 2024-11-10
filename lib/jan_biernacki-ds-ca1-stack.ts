@@ -168,7 +168,60 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
         REGION: "eu-west-1",
       },
     });
+
+
+    //authenticatioon
+    const userPool = new UserPool(this, "UserPool", {
+      signInAliases: { username: true, email: true },
+      selfSignUpEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const userPoolId = userPool.userPoolId;
+
+    const appClient = userPool.addClient("AppClient", {
+      authFlows: { userPassword: true },
+    });
     
+    const userPoolClientId = appClient.userPoolClientId;
+
+    new AuthApi(this, 'AuthServiceApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
+    });
+
+    new AppApi(this, 'AppApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
+    } );
+
+    const appCommonFnProps = {
+      architecture: lambda.Architecture.ARM_64,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      runtime: lambda.Runtime.NODEJS_16_X,
+      handler: "handler",
+      environment: {
+        USER_POOL_ID: userPoolId,
+        CLIENT_ID: userPoolClientId,
+        REGION: cdk.Aws.REGION,
+      },
+    };
+
+    const authorizationFn = new node.NodejsFunction(this, "AuthorizationFn", {
+      ...appCommonFnProps,
+      entry: `./lambdas/auth/authorizer.ts`,
+    });
+
+    const requestAuthorizer = new apig.RequestAuthorizer(
+      this,
+      "RequestAuthorizer",
+      {
+        identitySources: [apig.IdentitySource.header("Cookie")],
+        handler: authorizationFn,
+        resultsCacheTtl: cdk.Duration.minutes(0),
+      }
+    );
 
 
     //IAM Roles
@@ -192,8 +245,17 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       actions: ['dynamodb:PutItem'],
       resources: [moviesTable.tableArn],  // Grant DeleteItem permissions on the Movies table
     }));
-    
-    
+
+    newMovieFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:PutItem'],
+      resources: [moviesTable.tableArn],  // Grant PutItem permissions on the Movies table
+    }));
+
+    authorizationFn.addPermission('APIGatewayInvokePermission', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      action: 'lambda:InvokeFunction',
+      sourceArn: `arn:aws:execute-api:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:*/*/*`,
+    });
     
 
     // Permissions
@@ -209,40 +271,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
     movieTranslationsTable.grantReadWriteData(getMovieByIdFn);
 
-
-
-    //authenticatioon
-    const userPool = new UserPool(this, "UserPool", {
-      signInAliases: { username: true, email: true },
-      selfSignUpEnabled: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    const userPoolId = userPool.userPoolId;
-
-    const appClient = userPool.addClient("AppClient", {
-      authFlows: { userPassword: true },
-    });
-
-    // Cognito Authorizer
-    const authorizer = new apig.CognitoUserPoolsAuthorizer(this, "CognitoAuthorizer", {
-      cognitoUserPools: [userPool],
-    });
-
-    const userPoolClientId = appClient.userPoolClientId;
-
-    new AuthApi(this, 'AuthServiceApi', {
-      userPoolId: userPoolId,
-      userPoolClientId: userPoolClientId,
-    });
-
-    new AppApi(this, 'AppApi', {
-      userPoolId: userPoolId,
-      userPoolClientId: userPoolClientId,
-    } );
-
-
-
+    
     // REST API 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "ca1 api",
@@ -284,18 +313,18 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
 
     moviesEndpoint.addMethod( "POST", new apig.LambdaIntegration(newMovieFn, { proxy: true }), {
-      authorizer,
-      authorizationType: apig.AuthorizationType.COGNITO,
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
     });
 
     movieEndpoint.addMethod( "DELETE", new apig.LambdaIntegration(deleteMovieFn, { proxy: true }), {
-      authorizer,
-      authorizationType: apig.AuthorizationType.COGNITO,
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
     });
 
     movieEndpoint.addMethod( "PUT", new apig.LambdaIntegration(updateMovieFn, { proxy: true }), {
-      authorizer,
-      authorizationType: apig.AuthorizationType.COGNITO,
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
     });
     
   }

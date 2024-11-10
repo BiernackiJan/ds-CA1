@@ -17,7 +17,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
     
     const movieId = event.pathParameters?.movieId;
     const body = event.body ? JSON.parse(event.body) : undefined;
-    const userId = (event.requestContext as any).authorizer?.claims?.sub;
+    const userId = (event.requestContext as any).authorizer?.principalId;
     
     if (!movieId || !body || !userId) {
       return {
@@ -25,7 +25,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ message: "Missing movie ID or request body" }),
+        body: JSON.stringify({ message: event }),
       };
     }
 

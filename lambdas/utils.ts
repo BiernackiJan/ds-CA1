@@ -71,8 +71,8 @@ import {
       Statement: [
         {
           Effect: effect,
-          Action: "execute-api:Invoke",
-          Resource: [event.methodArn],
+          Action: "*",
+          Resource: "*",
         },
       ],
     };

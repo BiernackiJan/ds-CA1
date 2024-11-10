@@ -40,7 +40,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
 
 
     // Extract user ID from Cognito identity
-    const userId = (event.requestContext as any).authorizer?.claims?.sub;
+    const userId = (event.requestContext as any).authorizer.principalId;
     if (!userId) {
       return {
         statusCode: 403,
