@@ -32,6 +32,9 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
 
 
+  
+
+
     //Tables
     const moviesTable = new dynamodb.Table(this, "MoviesTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -60,6 +63,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       tableName: "MovieTranslations",
     });
+
 
 
 
@@ -166,6 +170,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
     });
     
 
+
     //IAM Roles
     //adding permissions to allow for translation
     getMovieByIdFn.addToRolePolicy(new iam.PolicyStatement({
@@ -177,6 +182,12 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       actions: ['dynamodb:PutItem'],
       resources: [movieTranslationsTable.tableArn],  // Grant PutItem permissions on the MovieTranslations table
     }));
+
+    deleteMovieFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:DeleteItem'],
+      resources: [moviesTable.tableArn],  // Grant DeleteItem permissions on the Movies table
+    }));
+    
     
     
 
@@ -193,59 +204,6 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
 
     movieTranslationsTable.grantReadWriteData(getMovieByIdFn);
 
-    // REST API 
-    const api = new apig.RestApi(this, "RestAPI", {
-      description: "ca1 api",
-      deployOptions: {
-        stageName: "dev",
-      },
-      defaultCorsPreflightOptions: {
-        allowHeaders: ["Content-Type", "X-Amz-Date"],
-        allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
-        allowCredentials: true,
-        allowOrigins: ["*"],
-      },
-    });
-    
-    const moviesEndpoint = api.root.addResource("movies");
-    moviesEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
-    );
-    
-    const movieEndpoint = moviesEndpoint.addResource("{movieId}");
-    movieEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
-    );
-
-
-    const movieCastEndpoint = moviesEndpoint.addResource("cast");
-    movieCastEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getMovieCastMembersFn, { proxy: true })
-    );
-
-    const translationEndpoint = movieEndpoint.addResource("translation");
-    translationEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
-    );
-
-    moviesEndpoint.addMethod(
-      "POST",
-      new apig.LambdaIntegration(newMovieFn, { proxy: true })
-    );
-
-    moviesEndpoint.addMethod(
-      "DELETE",
-      new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
-    );
-
-    movieEndpoint.addMethod(
-      "PUT",
-      new apig.LambdaIntegration(updateMovieFn, { proxy: true })
-    );
 
 
     //authenticatioon
@@ -261,6 +219,11 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       authFlows: { userPassword: true },
     });
 
+    // Cognito Authorizer
+    const authorizer = new apig.CognitoUserPoolsAuthorizer(this, "CognitoAuthorizer", {
+      cognitoUserPools: [userPool],
+    });
+
     const userPoolClientId = appClient.userPoolClientId;
 
     new AuthApi(this, 'AuthServiceApi', {
@@ -272,6 +235,63 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       userPoolId: userPoolId,
       userPoolClientId: userPoolClientId,
     } );
+
+
+
+    // REST API 
+    const api = new apig.RestApi(this, "RestAPI", {
+      description: "ca1 api",
+      deployOptions: {
+        stageName: "dev",
+      },
+      defaultCorsPreflightOptions: {
+        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
+        allowCredentials: true,
+        allowOrigins: ["*"],
+      },
+    });
+    
+    //Endpoints
+    const moviesEndpoint = api.root.addResource("movies");
+    moviesEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
+    );
+    
+    const movieEndpoint = moviesEndpoint.addResource("{movieId}");
+    movieEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
+    );
+
+    const movieCastEndpoint = moviesEndpoint.addResource("cast");
+    movieCastEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieCastMembersFn, { proxy: true })
+    );
+
+    const translationEndpoint = movieEndpoint.addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
+    );
+
+
+    moviesEndpoint.addMethod( "POST", new apig.LambdaIntegration(newMovieFn, { proxy: true }), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
+
+    movieEndpoint.addMethod( "DELETE", new apig.LambdaIntegration(deleteMovieFn, { proxy: true }), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
+
+    movieEndpoint.addMethod( "PUT", new apig.LambdaIntegration(updateMovieFn, { proxy: true }), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
     
   }
 }

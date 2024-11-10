@@ -10,7 +10,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
     console.log("[EVENT]", JSON.stringify(event));
 
 
-    const movieId = event.body?JSON.parse(event.body):undefined;
+    const movieId = event.pathParameters ? event.pathParameters.movieId : undefined;
     if (!movieId) {
       return {
         statusCode: 400,
@@ -21,9 +21,20 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       };
     }
 
+    const movieIdNumber = parseInt(movieId, 10);
+    if (isNaN(movieIdNumber)) {
+      return {
+        statusCode: 400,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "Invalid movieId parameter" }),
+      };
+    }
+
     const deleteCommand = new DeleteCommand({
       TableName: process.env.MOVIES_TABLE_NAME,
-      Key: { id: movieId.id },
+      Key: { id: movieIdNumber },
     });
 
     await ddbDocClient.send(deleteCommand);
@@ -33,7 +44,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ message: `Movie with ID ${movieId.id} deleted successfully.` }),
+      body: JSON.stringify({ message: `Movie with ID ${movieId} deleted successfully.` }),
     };
   } catch (error: any) {
     console.error("Error deleting movie:", JSON.stringify(error));
@@ -42,7 +53,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ error: "Failed to delete movie" }),
+      body: JSON.stringify({ error: `Failed to delete movie`,
+       }),
     };
   }
 };

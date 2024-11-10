@@ -41,6 +41,18 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       };
     }
 
+    // Convert movieId to number
+    const movieIdNumber = parseInt(movieId, 10);
+    if (isNaN(movieIdNumber)) {
+      return {
+        statusCode: 400,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "Invalid movieId format" }),
+      };
+    }
+
     const commandOutput = await ddbDocClient.send(
       new UpdateCommand({
         TableName: process.env.TABLE_NAME,
@@ -54,7 +66,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
           ":title": body.title,
           ":overview": body.overview,
         },
-        ReturnValues: "ALL_NEW" as const,
+        ReturnValues: "ALL_NEW",
       })
     );
 
@@ -72,7 +84,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ error }),
+      body: JSON.stringify({ 
+         error: `Failed to update movie`,
+       }),
     };
   }
 };
