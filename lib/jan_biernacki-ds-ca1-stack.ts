@@ -187,6 +187,11 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       actions: ['dynamodb:DeleteItem'],
       resources: [moviesTable.tableArn],  // Grant DeleteItem permissions on the Movies table
     }));
+
+    updateMovieFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:PutItem'],
+      resources: [moviesTable.tableArn],  // Grant DeleteItem permissions on the Movies table
+    }));
     
     
     
