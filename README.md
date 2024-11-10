@@ -1,8 +1,12 @@
-# Welcome to your CDK TypeScript project
+# Welcome to My Distributed Systems TypeScript CA1
 
-This is a blank project for CDK development with TypeScript.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+### Main endpoints 
+
+* **GET** /dev/movies - endpoint to retrieve all movies in the Movies table
+* **POST** /dev/movies - endpoint to add a new movie protected by JWT token so only logged in users can add new movies
+
+* **
 
 ## Useful commands
 

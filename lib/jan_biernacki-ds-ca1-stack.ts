@@ -270,7 +270,7 @@ export class JanBiernackiDsCa1Stack extends cdk.Stack {
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
     );
 
-    const movieCastEndpoint = moviesEndpoint.addResource("cast");
+    const movieCastEndpoint = movieEndpoint.addResource("cast");
     movieCastEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieCastMembersFn, { proxy: true })
